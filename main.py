@@ -174,8 +174,7 @@ while w.update():
     w.drawArray(fv.magnitudes(), [0.5, 1], [0, 0])
     w.drawArray(fv.chargesAlpha(), [0.5, 1], [0, 0])
     w.drawArray(fv.fieldRgb(), [0.5, 1], [0.5, 0])
-    #d.update()
-    f.chargefield[24, 24] = 1
+    d.update()
     f.update()
     w.sleep(20)
 
