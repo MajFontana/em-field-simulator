@@ -64,15 +64,15 @@ class Dipole:
         self.efield = efield
         width = LIGHT_SPEED / frequency / 2 / efield.scale
         half = width / 2
-        ctr = [dim / 2 for dim in efield.size[:2]]
+        ctr = [dim / 2 for dim in efield.size]
         rang = [ctr[0] - half, ctr[0] + half]
         pxrang = [max(0, int(math.floor(rang[0]))), min(efield.size[0] -1, int(math.ceil(rang[1])))]
         self.values = numpy.linspace((pxrang[0] - ctr[0]) / width, (pxrang[1] - ctr[0]) / width, pxrang[1] - pxrang[0] + 1) * math.pi
-        self.start = [pxrang[0], int(ctr[1])]
+        self.start = [pxrang[0], int(ctr[1]), int(ctr[2])]
         
     def update(self):
         for i in range(len(self.values)):
-            self.efield.chargefield[self.start[0] + i, self.start[1]] = math.sin(self.values[i]) * math.sin(2 * math.pi * self.efield.time * self.frequency)
+            self.efield.chargefield[self.start[0] + i, self.start[1], self.start[2]] = math.sin(self.values[i]) * math.sin(2 * math.pi * self.efield.time * self.frequency)
 
 
 
@@ -94,7 +94,7 @@ class EFieldVisualizer:
         return col
 
     def charges(self):
-        plane = self.efield.chargefield
+        plane = self.efield.chargefield[..., 0:1]
         R = plane * (plane > 0)
         G = numpy.zeros(plane.shape)
         B = numpy.absolute(plane * (plane < 0))
@@ -102,7 +102,7 @@ class EFieldVisualizer:
         return stitched
 
     def chargesAlpha(self):
-        plane = self.efield.chargefield
+        plane = self.efield.chargefield[..., 0:1]
         R = plane > 0
         G = numpy.zeros(plane.shape)
         B = plane < 0
@@ -125,6 +125,8 @@ class ArrayRenderer:
             pygame.surfarray.blit_array(rendered, raw[..., :3])
             alpha = numpy.array(rendered.get_view("A"), copy=False)
             alpha[:] = raw[..., 3]
+        else:
+            raise AttributeError("Invalid array shape")
         surf = pygame.transform.scale(rendered, size)
         return surf
 
@@ -165,7 +167,7 @@ class Window:
 
 
 w = Window((800, 400))
-f = EField((51, 51, 1), 0.01, 1 / 2400000000 / 16)
+f = EField((21, 21, 21), 0.01, 1 / 2400000000 / 16)
 d = Dipole(f, 2400000000)
 fv = EFieldVisualizer(f)
 
