@@ -11,34 +11,59 @@ LIGHT_SPEED = 299792458
 
 
 
-class EField:
+class Field:
     def __init__(self, size, scale, timestep):
         self.size = size
         self.scale = scale
         abssize = [(dim - 1) * scale for dim in size]
 
+        modelsize = [dim * 2 - 1 for dim in size]
+        axes = [numpy.linspace(-abssize[i], abssize[i], modelsize[i]) if modelsize[i] > 1 else numpy.array([0]) for i in range(3)]
+        coords = numpy.stack(numpy.meshgrid(*axes, indexing="ij"), axis=-1)
+        self.modelcenter = tuple([int(dim / 2) for dim in modelsize])
+
+        distcubed = numpy.einsum("xyzp,xyzp->xyz", coords, coords) ** 1.5
+        with numpy.errstate(divide="ignore", invalid="ignore"):
+            divergence = coords / distcubed[..., None]
+        divergence[self.modelcenter] = 0
+        curl = numpy.array([numpy.cross(basisvec, divergence) for basisvec in numpy.eye(3)])
+
         self.timestep = timestep
         dstep = timestep * LIGHT_SPEED
-        radii = list(numpy.arange(0, math.hypot(math.hypot(abssize[0], abssize[1]), abssize[2]) + dstep, dstep))
-
-        axes = [numpy.linspace(-abssize[i], abssize[i], size[i] * 2 - 1) if size[i] > 1 else numpy.array([0]) for i in range(3)]
-        coords = numpy.stack(numpy.meshgrid(*axes, indexing="ij"), axis=-1)
-        self.modelcenter = tuple([int(dim / 2) for dim in coords.shape[:-1]])
         
-        distsquared = numpy.einsum("xyzp,xyzp->xyz", coords, coords)
-        dist = numpy.sqrt(distsquared)
-        with numpy.errstate(divide="ignore", invalid="ignore"):
-            unitfield = (COULOMB_CONST / distsquared)[..., None] * (coords / dist[..., None])
-        unitfield[self.modelcenter] = 0
-        self.model = numpy.array([(dist > radii[i]) & (dist < radii[i + 1]) for i in range(len(radii) - 1)])[..., None] * unitfield[None,...]
+        radiicubed = list(numpy.arange(0, math.hypot(math.hypot(abssize[0], abssize[1]), abssize[2]) + dstep, dstep) ** 3)
+        tsize = len(radiicubed)
+        tslicemask = numpy.array([(distcubed > radiicubed[i]) & (distcubed < radiicubed[i + 1]) for i in range(tsize - 1)])[..., None]
 
-        self.field = numpy.zeros((len(radii) - 1, *size, 3))
+        self.efielddivmodel = COULOMB_CONST * divergence * tslicemask
+        self.efieldcurlmodel = 0
+        self.bfieldcurlmodel = 
+        
+##        distsquared = numpy.einsum("xyzp,xyzp->xyz", coords, coords)
+##        dist = numpy.sqrt(distsquared)
+##        
+##        with numpy.errstate(divide="ignore", invalid="ignore"):
+##            unitfield = (COULOMB_CONST / distsquared)[..., None] * (coords / dist[..., None])
+##        unitfield[self.modelcenter] = 0
+##        self.model = numpy.array([(dist > radii[i]) & (dist < radii[i + 1]) for i in range(len(radii) - 1)])[..., None] * unitfield[None,...]
+##
+##        self.xcurl = numpy.cross((1, 0, 0), coords / dist[..., None])
+##        self.ycurl = numpy.cross((0, 1, 0), coords / dist[..., None])
+##        self.zcurl = numpy.cross((0, 0, 1), coords / dist[..., None])
+##        with numpy.errstate(divide="ignore", invalid="ignore"):
+##            unitcurl = (1 / distsquared)[..., None] * curl
+##        unitcurl[self.modelcenter] = 0
+##        self.curlmodel = numpy.array([(dist > radii[i]) & (dist < radii[i + 1]) for i in range(len(radii) - 1)])[..., None] * unitcurl[None,...]
+
+        self.efield = numpy.zeros((tsize - 1, *size, 3))
+        self.bfield = numpy.zeros((tsize - 1, *size, 3))
         self.chargefield = numpy.zeros(size)
+        self.currentdensity = numpy.zeros((*size, 3))
         self.time = 0
 
     def update(self):
-        self.field = numpy.roll(self.field, -1, 0)
-        self.field[-1] = 0
+        self.efield = numpy.roll(self.efield, -1, 0)
+        self.efield[-1] = 0
         for x in range(self.size[0]):
             xstart = self.modelcenter[0] - x
             xstop = xstart + self.size[0]
@@ -50,9 +75,9 @@ class EField:
                     if charge:
                         zstart = self.modelcenter[2] - z
                         zstop = zstart + self.size[2]
-                        cropped = self.model[:, xstart:xstop, ystart:ystop, zstart:zstop]
+                        cropped = self.efielddivmodel[:, xstart:xstop, ystart:ystop, zstart:zstop]
                         scaled = cropped * charge
-                        self.field += scaled
+                        self.efield += scaled
         self.time += self.timestep
 
 
@@ -82,19 +107,19 @@ class EFieldVisualizer:
         self.efield = efield
     
     def fieldRgb(self):
-        plane = self.efield.field[0, ..., 0, :]
+        plane = self.efield.efield[0, ..., 10, :]
         col = plane / 10000000000000 + 0.5
         return col
         
     def magnitudes(self):
-        plane = self.efield.field[0, ..., 0, :]
+        plane = self.efield.efield[0, ..., 10, :]
         mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane))
         stitched = numpy.repeat(mag[..., None], 3, 2)
         col = stitched / 10000000000000
         return col
 
     def charges(self):
-        plane = self.efield.chargefield[..., 0:1]
+        plane = self.efield.chargefield[..., 10:11]
         R = plane * (plane > 0)
         G = numpy.zeros(plane.shape)
         B = numpy.absolute(plane * (plane < 0))
@@ -102,7 +127,7 @@ class EFieldVisualizer:
         return stitched
 
     def chargesAlpha(self):
-        plane = self.efield.chargefield[..., 0:1]
+        plane = self.efield.chargefield[..., 10:11]
         R = plane > 0
         G = numpy.zeros(plane.shape)
         B = plane < 0
@@ -167,7 +192,7 @@ class Window:
 
 
 w = Window((800, 400))
-f = EField((21, 21, 21), 0.01, 1 / 2400000000 / 16)
+f = Field((21, 21, 21), 0.01, 1 / 2400000000 / 16)
 d = Dipole(f, 2400000000)
 fv = EFieldVisualizer(f)
 
