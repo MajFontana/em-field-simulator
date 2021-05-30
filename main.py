@@ -5,7 +5,9 @@ import math
 
 
 
-COULOMB_CONST = 8987551792.3
+COULOMB_CONST = 8987551792.3 # Might not need this anymore
+VAC_PERMITTIVITY = 8.8541878128 * 10**(-12)
+VAC_PERMEABILITY = 1.25663706212 * 10**(-6)
 LIGHT_SPEED = 299792458
 
 
@@ -35,25 +37,9 @@ class Field:
         tsize = len(radiicubed)
         tslicemask = numpy.array([(distcubed > radiicubed[i]) & (distcubed < radiicubed[i + 1]) for i in range(tsize - 1)])[..., None]
 
-        self.efielddivmodel = COULOMB_CONST * divergence * tslicemask
-        self.efieldcurlmodel = 0
-        self.bfieldcurlmodel = 
-        
-##        distsquared = numpy.einsum("xyzp,xyzp->xyz", coords, coords)
-##        dist = numpy.sqrt(distsquared)
-##        
-##        with numpy.errstate(divide="ignore", invalid="ignore"):
-##            unitfield = (COULOMB_CONST / distsquared)[..., None] * (coords / dist[..., None])
-##        unitfield[self.modelcenter] = 0
-##        self.model = numpy.array([(dist > radii[i]) & (dist < radii[i + 1]) for i in range(len(radii) - 1)])[..., None] * unitfield[None,...]
-##
-##        self.xcurl = numpy.cross((1, 0, 0), coords / dist[..., None])
-##        self.ycurl = numpy.cross((0, 1, 0), coords / dist[..., None])
-##        self.zcurl = numpy.cross((0, 0, 1), coords / dist[..., None])
-##        with numpy.errstate(divide="ignore", invalid="ignore"):
-##            unitcurl = (1 / distsquared)[..., None] * curl
-##        unitcurl[self.modelcenter] = 0
-##        self.curlmodel = numpy.array([(dist > radii[i]) & (dist < radii[i + 1]) for i in range(len(radii) - 1)])[..., None] * unitcurl[None,...]
+        self.efielddivmodel = divergence * (1 / VAC_PERMITTIVITY / 4 / math.pi) * tslicemask
+        self.efieldcurlmodel = 0 # TODO: curld due to change in magnetic field
+        self.bfieldcurlmodel = (curl * (VAC_PERMEABILITY / 4 / math.pi))[:, None, ...] * tslicemask
 
         self.efield = numpy.zeros((tsize - 1, *size, 3))
         self.bfield = numpy.zeros((tsize - 1, *size, 3))
@@ -72,17 +58,25 @@ class Field:
                 ystop = ystart + self.size[1]
                 for z in range(self.size[2]):
                     charge = self.chargefield[x, y, z]
-                    if charge:
+                    if charge != 0:
                         zstart = self.modelcenter[2] - z
                         zstop = zstart + self.size[2]
-                        cropped = self.efielddivmodel[:, xstart:xstop, ystart:ystop, zstart:zstop]
-                        scaled = cropped * charge
-                        self.efield += scaled
+                        
+                        croppedE = self.efielddivmodel[:, xstart:xstop, ystart:ystop, zstart:zstop]
+                        scaledE = croppedE * charge
+                        self.efield += scaledE
+
+                    current = self.currentdensity[x, y, z]
+                    if any(current):
+                        croppedB = self.bfieldcurlmodel[..., xstart:xstop, ystart:ystop, zstart:zstop, :]
+                        scaledE = croppedB * current # TODO: Need to verify that this does the right thing - multiply the model with each axis of the current vector
+                        self.bfield += scaledE
         self.time += self.timestep
 
 
 
 
+# TODO: Need to redo this to simulate both charge and current
 class Dipole:
     def __init__(self, efield, frequency):
         self.frequency = frequency
@@ -102,6 +96,7 @@ class Dipole:
 
 
 
+# TODO: Add visualization for magnetic field
 class EFieldVisualizer:
     def __init__(self, efield):
         self.efield = efield
