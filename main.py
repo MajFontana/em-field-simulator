@@ -35,6 +35,7 @@ class Field:
         
         radiicubed = list(numpy.arange(0, math.hypot(math.hypot(abssize[0], abssize[1]), abssize[2]) + dstep, dstep) ** 3)
         tsize = len(radiicubed)
+        print(radiicubed)
         tslicemask = numpy.array([(distcubed > radiicubed[i]) & (distcubed < radiicubed[i + 1]) for i in range(tsize - 1)])[..., None]
 
         self.efielddivmodel = divergence * (1 / VAC_PERMITTIVITY / 4 / math.pi) * tslicemask
@@ -47,9 +48,29 @@ class Field:
         self.currentdensity = numpy.zeros((*size, 3))
         self.time = 0
 
+        import matplotlib.pyplot as plt
+
+        ax = plt.figure().add_subplot(projection='3d')
+
+        # Make the grid
+        x, y, z = numpy.meshgrid(numpy.linspace(-5, 5, modelsize[0]),
+                              numpy.linspace(-5, 5, modelsize[1]),
+                              numpy.linspace(-5, 5, modelsize[2]))
+
+        # Make the direction data for the arrows
+        u = self.bfieldcurlmodel[0][0][..., 0]
+        v = self.bfieldcurlmodel[0][0][..., 1]
+        w = self.bfieldcurlmodel[0][0][..., 2]
+
+        ax.quiver(x, y, z, v, u, w, length=1000, normalize=False)
+
+        plt.show()
+
     def update(self):
         self.efield = numpy.roll(self.efield, -1, 0)
         self.efield[-1] = 0
+        self.bfield = numpy.roll(self.bfield, -1, 0)
+        self.bfield[-1] = 0
         for x in range(self.size[0]):
             xstart = self.modelcenter[0] - x
             xstop = xstart + self.size[0]
@@ -57,11 +78,11 @@ class Field:
                 ystart = self.modelcenter[1] - y
                 ystop = ystart + self.size[1]
                 for z in range(self.size[2]):
+                    zstart = self.modelcenter[2] - z
+                    zstop = zstart + self.size[2]
+                    
                     charge = self.chargefield[x, y, z]
                     if charge != 0:
-                        zstart = self.modelcenter[2] - z
-                        zstop = zstart + self.size[2]
-                        
                         croppedE = self.efielddivmodel[:, xstart:xstop, ystart:ystop, zstart:zstop]
                         scaledE = croppedE * charge
                         self.efield += scaledE
@@ -69,8 +90,8 @@ class Field:
                     current = self.currentdensity[x, y, z]
                     if any(current):
                         croppedB = self.bfieldcurlmodel[..., xstart:xstop, ystart:ystop, zstart:zstop, :]
-                        scaledE = croppedB * current # TODO: Need to verify that this does the right thing - multiply the model with each axis of the current vector
-                        self.bfield += scaledE
+                        scaledB = croppedB * current # TODO: Need to verify that this does the right thing - multiply the model with each axis of the current vector
+                        self.bfield += numpy.sum(scaledB, 0)
         self.time += self.timestep
 
 
@@ -96,25 +117,25 @@ class Dipole:
 
 
 
-# TODO: Add visualization for magnetic field
 class EFieldVisualizer:
-    def __init__(self, efield):
+    def __init__(self, efield, z):
         self.efield = efield
+        self.z = z
     
     def fieldRgb(self):
-        plane = self.efield.efield[0, ..., 10, :]
+        plane = self.efield.efield[0, ..., self.z, :]
         col = plane / 10000000000000 + 0.5
         return col
         
     def magnitudes(self):
-        plane = self.efield.efield[0, ..., 10, :]
+        plane = self.efield.efield[0, ..., self.z, :]
         mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane))
         stitched = numpy.repeat(mag[..., None], 3, 2)
         col = stitched / 10000000000000
         return col
 
     def charges(self):
-        plane = self.efield.chargefield[..., 10:11]
+        plane = self.efield.chargefield[..., self.z:self.z+1]
         R = plane * (plane > 0)
         G = numpy.zeros(plane.shape)
         B = numpy.absolute(plane * (plane < 0))
@@ -122,13 +143,32 @@ class EFieldVisualizer:
         return stitched
 
     def chargesAlpha(self):
-        plane = self.efield.chargefield[..., 10:11]
+        plane = self.efield.chargefield[..., self.z:self.z+1]
         R = plane > 0
         G = numpy.zeros(plane.shape)
         B = plane < 0
         A = numpy.absolute(plane)
         stitched = numpy.concatenate([R, G, B, A], 2)
         return stitched
+
+    def currentAlpha(self):
+        plane = self.efield.currentdensity[..., self.z, :]
+        col = plane + 0.5
+        mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane))
+        stitched = numpy.append(col, mag[..., None], -1)
+        return stitched
+
+    def bFieldRgb(self):
+        plane = self.efield.bfield[0, ..., self.z, :]
+        col = plane * 1000 + 0.5
+        return col
+
+    def bMagnitudes(self):
+        plane = self.efield.bfield[0, ..., self.z, :]
+        mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane))
+        stitched = numpy.repeat(mag[..., None], 3, 2)
+        col = stitched * 1000
+        return col
 
 
 
@@ -186,17 +226,21 @@ class Window:
 
 
 
-w = Window((800, 400))
-f = Field((21, 21, 21), 0.01, 1 / 2400000000 / 16)
-d = Dipole(f, 2400000000)
-fv = EFieldVisualizer(f)
+w = Window((800, 800))
+f = Field((11, 11, 11), 0.01, 0.01)
+#d = Dipole(f, 2400000000)
+f.currentdensity[5, 5, :] = (0, 0, 1)
+fv = EFieldVisualizer(f, 5)
 
 while w.update():
     w.fill([0, 0, 0])
-    w.drawArray(fv.magnitudes(), [0.5, 1], [0, 0])
-    w.drawArray(fv.chargesAlpha(), [0.5, 1], [0, 0])
-    w.drawArray(fv.fieldRgb(), [0.5, 1], [0.5, 0])
-    d.update()
+    w.drawArray(fv.magnitudes(), [0.5, 0.5], [0, 0])
+    w.drawArray(fv.chargesAlpha(), [0.5, 0.5], [0, 0])
+    w.drawArray(fv.fieldRgb(), [0.5, 0.5], [0.5, 0])
+    w.drawArray(fv.bMagnitudes(), [0.5, 0.5], [0, 0.5])
+    w.drawArray(fv.currentAlpha(), [0.5, 0.5], [0, 0.5])
+    w.drawArray(fv.bFieldRgb(), [0.5, 0.5], [0.5, 0.5])
+    #d.update()
     f.update()
     w.sleep(20)
 
