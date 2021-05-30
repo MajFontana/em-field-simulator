@@ -5,7 +5,6 @@ import math
 
 
 
-COULOMB_CONST = 8987551792.3 # Might not need this anymore
 VAC_PERMITTIVITY = 8.8541878128 * 10**(-12)
 VAC_PERMEABILITY = 1.25663706212 * 10**(-6)
 LIGHT_SPEED = 299792458
@@ -35,11 +34,10 @@ class Field:
         
         radiicubed = list(numpy.arange(0, math.hypot(math.hypot(abssize[0], abssize[1]), abssize[2]) + dstep, dstep) ** 3)
         tsize = len(radiicubed)
-        print(radiicubed)
         tslicemask = numpy.array([(distcubed > radiicubed[i]) & (distcubed < radiicubed[i + 1]) for i in range(tsize - 1)])[..., None]
 
         self.efielddivmodel = divergence * (1 / VAC_PERMITTIVITY / 4 / math.pi) * tslicemask
-        self.efieldcurlmodel = 0 # TODO: curld due to change in magnetic field
+        self.efieldcurlmodel = 0 # TODO: curl due to change in magnetic field
         self.bfieldcurlmodel = (curl * (VAC_PERMEABILITY / 4 / math.pi))[:, None, ...] * tslicemask
 
         self.efield = numpy.zeros((tsize - 1, *size, 3))
@@ -48,29 +46,12 @@ class Field:
         self.currentdensity = numpy.zeros((*size, 3))
         self.time = 0
 
-        import matplotlib.pyplot as plt
-
-        ax = plt.figure().add_subplot(projection='3d')
-
-        # Make the grid
-        x, y, z = numpy.meshgrid(numpy.linspace(-5, 5, modelsize[0]),
-                              numpy.linspace(-5, 5, modelsize[1]),
-                              numpy.linspace(-5, 5, modelsize[2]))
-
-        # Make the direction data for the arrows
-        u = self.bfieldcurlmodel[0][0][..., 0]
-        v = self.bfieldcurlmodel[0][0][..., 1]
-        w = self.bfieldcurlmodel[0][0][..., 2]
-
-        ax.quiver(x, y, z, v, u, w, length=1000, normalize=False)
-
-        plt.show()
-
     def update(self):
         self.efield = numpy.roll(self.efield, -1, 0)
         self.efield[-1] = 0
         self.bfield = numpy.roll(self.bfield, -1, 0)
         self.bfield[-1] = 0
+        
         for x in range(self.size[0]):
             xstart = self.modelcenter[0] - x
             xstop = xstart + self.size[0]
@@ -89,15 +70,14 @@ class Field:
 
                     current = self.currentdensity[x, y, z]
                     if any(current):
-                        croppedB = self.bfieldcurlmodel[..., xstart:xstop, ystart:ystop, zstart:zstop, :]
-                        scaledB = croppedB * current # TODO: Need to verify that this does the right thing - multiply the model with each axis of the current vector
+                        croppedB = self.bfieldcurlmodel[:, :, xstart:xstop, ystart:ystop, zstart:zstop]
+                        scaledB = croppedB * current[:, None, None, None, None, None]
                         self.bfield += numpy.sum(scaledB, 0)
         self.time += self.timestep
 
 
 
 
-# TODO: Need to redo this to simulate both charge and current
 class Dipole:
     def __init__(self, efield, frequency):
         self.frequency = frequency
@@ -106,69 +86,68 @@ class Dipole:
         half = width / 2
         ctr = [dim / 2 for dim in efield.size]
         rang = [ctr[0] - half, ctr[0] + half]
-        pxrang = [max(0, int(math.floor(rang[0]))), min(efield.size[0] -1, int(math.ceil(rang[1])))]
+        pxrang = [max(0, int(math.floor(rang[0]))), min(efield.size[0] - 1, int(math.ceil(rang[1])))]
         self.values = numpy.linspace((pxrang[0] - ctr[0]) / width, (pxrang[1] - ctr[0]) / width, pxrang[1] - pxrang[0] + 1) * math.pi
         self.start = [pxrang[0], int(ctr[1]), int(ctr[2])]
         
     def update(self):
         for i in range(len(self.values)):
             self.efield.chargefield[self.start[0] + i, self.start[1], self.start[2]] = math.sin(self.values[i]) * math.sin(2 * math.pi * self.efield.time * self.frequency)
+            self.efield.currentdensity[self.start[0] + i, self.start[1], self.start[2]] = [math.cos(self.values[i]) * math.cos(2 * math.pi * self.efield.time * self.frequency), 0, 0]
 
 
 
 
 class EFieldVisualizer:
-    def __init__(self, efield, z):
-        self.efield = efield
-        self.z = z
+    def __init__(self, efield):
+        self.field = efield
     
-    def fieldRgb(self):
-        plane = self.efield.efield[0, ..., self.z, :]
-        col = plane / 10000000000000 + 0.5
+    def fieldRgb(self, index, axis=2, intensityScale=1):
+        plane = numpy.take(self.field.efield[0], index, axis)
+        col = plane * intensityScale / 2 + 0.5
         return col
         
-    def magnitudes(self):
-        plane = self.efield.efield[0, ..., self.z, :]
-        mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane))
+    def magnitudes(self, index, axis=2, intensityScale=1):
+        plane = numpy.take(self.field.efield[0], index, axis)
+        mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane)) * intensityScale
         stitched = numpy.repeat(mag[..., None], 3, 2)
-        col = stitched / 10000000000000
-        return col
+        return stitched
 
-    def charges(self):
-        plane = self.efield.chargefield[..., self.z:self.z+1]
+    def charges(self, index, axis=2, intensityScale=1):
+        plane = numpy.take(self.field.chargefield, index, axis)
         R = plane * (plane > 0)
         G = numpy.zeros(plane.shape)
         B = numpy.absolute(plane * (plane < 0))
-        stitched = numpy.concatenate([R, G, B], 2)
+        stitched = numpy.stack([R, G, B], 2) * intensityScale
         return stitched
 
-    def chargesAlpha(self):
-        plane = self.efield.chargefield[..., self.z:self.z+1]
+    def chargesAlpha(self, index, axis=2, intensityScale=1):
+        plane = numpy.take(self.field.chargefield, index, axis)
         R = plane > 0
         G = numpy.zeros(plane.shape)
         B = plane < 0
-        A = numpy.absolute(plane)
-        stitched = numpy.concatenate([R, G, B, A], 2)
+        A = numpy.absolute(plane) * intensityScale
+        stitched = numpy.stack([R, G, B, A], 2)
         return stitched
 
-    def currentAlpha(self):
-        plane = self.efield.currentdensity[..., self.z, :]
-        col = plane + 0.5
+    def currentAlpha(self, index, axis=2, intensityScale=1):
+        plane = numpy.take(self.field.currentdensity, index, axis)
         mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane))
-        stitched = numpy.append(col, mag[..., None], -1)
+        RGB = numpy.divide(plane, mag[..., None], where=(mag[..., None] != 0)) / 2 + 0.5
+        A = mag * intensityScale
+        stitched = numpy.append(RGB, A[..., None], 2)
         return stitched
 
-    def bFieldRgb(self):
-        plane = self.efield.bfield[0, ..., self.z, :]
-        col = plane * 1000 + 0.5
+    def bFieldRgb(self, index, axis=2, intensityScale=1):
+        plane = numpy.take(self.field.bfield[0], index, axis)
+        col = plane * intensityScale / 2 + 0.5
         return col
 
-    def bMagnitudes(self):
-        plane = self.efield.bfield[0, ..., self.z, :]
-        mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane))
+    def bMagnitudes(self, index, axis=2, intensityScale=1):
+        plane = numpy.take(self.field.bfield[0], index, axis)
+        mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane)) * intensityScale
         stitched = numpy.repeat(mag[..., None], 3, 2)
-        col = stitched * 1000
-        return col
+        return stitched
 
 
 
@@ -226,22 +205,33 @@ class Window:
 
 
 
-w = Window((800, 800))
-f = Field((11, 11, 11), 0.01, 0.01)
-#d = Dipole(f, 2400000000)
-f.currentdensity[5, 5, :] = (0, 0, 1)
-fv = EFieldVisualizer(f, 5)
+w = Window((1600, 800))
+f = Field((21, 21, 21), 0.01, 0.00000000005)
+fv = EFieldVisualizer(f)
+d = Dipole(f, 2400000000)
 
 while w.update():
     w.fill([0, 0, 0])
-    w.drawArray(fv.magnitudes(), [0.5, 0.5], [0, 0])
-    w.drawArray(fv.chargesAlpha(), [0.5, 0.5], [0, 0])
-    w.drawArray(fv.fieldRgb(), [0.5, 0.5], [0.5, 0])
-    w.drawArray(fv.bMagnitudes(), [0.5, 0.5], [0, 0.5])
-    w.drawArray(fv.currentAlpha(), [0.5, 0.5], [0, 0.5])
-    w.drawArray(fv.bFieldRgb(), [0.5, 0.5], [0.5, 0.5])
-    #d.update()
+
+    w.drawArray(fv.magnitudes(10, 2, 0.00000000000001), [0.25, 0.5], [0, 0])
+    w.drawArray(fv.chargesAlpha(10, 2, 1), [0.25, 0.5], [0, 0])
+    w.drawArray(fv.fieldRgb(10, 2, 0.00000000000001), [0.25, 0.5], [0.25, 0])
+    
+    w.drawArray(fv.bMagnitudes(10, 2, 1000), [0.25, 0.5], [0, 0.5])
+    w.drawArray(fv.currentAlpha(10, 2, 1), [0.25, 0.5], [0, 0.5])
+    w.drawArray(fv.bFieldRgb(10, 2, 1000), [0.25, 0.5], [0.25, 0.5])
+
+    w.drawArray(fv.magnitudes(10, 0, 0.00000000000001), [0.25, 0.5], [0.5, 0])
+    w.drawArray(fv.chargesAlpha(10, 0, 1), [0.25, 0.5], [0.5, 0])
+    w.drawArray(fv.fieldRgb(10, 0, 0.00000000000001), [0.25, 0.5], [0.75, 0])
+    
+    w.drawArray(fv.bMagnitudes(10, 0, 1000), [0.25, 0.5], [0.5, 0.5])
+    w.drawArray(fv.currentAlpha(10, 0, 1), [0.25, 0.5], [0.5, 0.5])
+    w.drawArray(fv.bFieldRgb(10, 0, 1000), [0.25, 0.5], [0.75, 0.5])
+
+    d.update()
     f.update()
+
     w.sleep(20)
 
 w.close()
