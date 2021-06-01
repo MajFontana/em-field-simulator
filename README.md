@@ -1,5 +1,4 @@
 # em-field-simulator
 
-This is a work in progress. Currently only electric field divergence is simulated.
-I hope implementing the E field curl and B field curl will produce physically accurate results.
-Latest WIP is in the dev branch.
+This is a work in progress. Latest WIP is in the dev branch.\
+Currently the simulation follows Gauss's and Ampere's laws. Still missing is the simulation of Faraday's law and Maxwell's addition to Ampere's law.
