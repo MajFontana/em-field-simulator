@@ -23,6 +23,15 @@
     <Content Include="requirements.txt" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="field.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="fieldvis.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="gui.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="main.py" />
   </ItemGroup>
   <ItemGroup>
