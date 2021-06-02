@@ -1,5 +1,6 @@
 import numpy
 import math
+import fieldcuda
 
 
 
@@ -21,7 +22,7 @@ class Field:
         modelsize = [dim * 2 - 1 for dim in size]
         axes = [numpy.linspace(-abssize[i], abssize[i], modelsize[i]) if modelsize[i] > 1 else numpy.array([0]) for i in range(3)]
         coords = numpy.stack(numpy.meshgrid(*axes, indexing="ij"), axis=-1)
-        self.modelcenter = tuple([int(dim / 2) for dim in modelsize])
+        self.modelcenter = [int(dim / 2) for dim in modelsize]
 
         # Compute divergence and curl models
         distcubed = numpy.einsum("xyzp,xyzp->xyz", coords, coords) ** 1.5
@@ -34,17 +35,17 @@ class Field:
         dstep = self.timestep * LIGHT_SPEED
         
         # Compute spacetime propagation mask
-        radiicubed = list(numpy.arange(0, math.hypot(math.hypot(abssize[0], abssize[1]), abssize[2]) + dstep, dstep) ** 3)
-        tsize = len(radiicubed)
-        tslicemask = numpy.array([(distcubed > radiicubed[i]) & (distcubed < radiicubed[i + 1]) for i in range(tsize - 1)])[..., None]
+        radiicubed = numpy.arange(0, math.hypot(math.hypot(abssize[0], abssize[1]), abssize[2]) + dstep, dstep) ** 3
+        tsize = len(radiicubed) - 1
+        tslicemask = numpy.array([(distcubed > radiicubed[i]) & (distcubed < radiicubed[i + 1]) for i in range(tsize)])[..., None]
 
         # Compute models for Maxwell's equations
         self.gaussmodel = divergence * (1 / VAC_PERMITTIVITY / 4 / math.pi) * tslicemask
         self.faradaymodel = 0 # TODO: curl due to change in magnetic field
         self.amperemodel = (curl * (VAC_PERMEABILITY / 4 / math.pi))[:, None, ...] * tslicemask
 
-        self.efield = numpy.zeros((tsize - 1, *size, 3))
-        self.bfield = numpy.zeros((tsize - 1, *size, 3))
+        self.efield = numpy.zeros((tsize, *size, 3))
+        self.bfield = numpy.zeros((tsize, *size, 3))
         self.time = 0
         self.chargedensity = numpy.zeros(size)
         self.currentdensity = numpy.zeros((*size, 3))
@@ -83,6 +84,12 @@ class Field:
                         croppedB = self.amperemodel[:, :, xstart:xstop, ystart:ystop, zstart:zstop]
                         scaledB = croppedB * current[:, None, None, None, None, None]
                         self.bfield += numpy.sum(scaledB, 0)
+    
+    def setupCuda(self):
+        fieldcuda.setup(self.efield.shape, self.gaussmodel)
+
+    def cudaUpdate(self):
+        fieldcuda.compute(self.efield, self.chargedensity)
 
 
 
