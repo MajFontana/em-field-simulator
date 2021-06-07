@@ -19,6 +19,9 @@
     <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="fieldkernels.h">
+      <SubType>Code</SubType>
+    </Content>
     <Content Include="README.md" />
     <Content Include="requirements.txt" />
   </ItemGroup>

@@ -7,49 +7,49 @@ class FieldVisualizer:
     def __init__(self, field):
         self.field = field
     
-    def eFieldRgb(self, index, axis=2, intensityscale=1):
+    def eFieldRgb(self, index, axis=2, intensity=1):
         plane = numpy.take(self.field.efield[0], index, axis)
-        col = plane * intensityscale / 2 + 0.5
+        col = plane * intensity / 2 + 0.5
         return col
         
-    def eFieldMagnitude(self, index, axis=2, intensityscale=1):
+    def eFieldMagnitude(self, index, axis=2, intensity=1):
         plane = numpy.take(self.field.efield[0], index, axis)
-        mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane)) * intensityscale
+        mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane)) * intensity
         stitched = numpy.repeat(mag[..., None], 3, 2)
         return stitched
 
-    def bFieldRgb(self, index, axis=2, intensityscale=1):
+    def bFieldRgb(self, index, axis=2, intensity=1):
         plane = numpy.take(self.field.bfield[0], index, axis)
-        col = plane * intensityscale / 2 + 0.5
+        col = plane * intensity / 2 + 0.5
         return col
 
-    def bFieldMagnitude(self, index, axis=2, intensityscale=1):
+    def bFieldMagnitude(self, index, axis=2, intensity=1):
         plane = numpy.take(self.field.bfield[0], index, axis)
-        mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane)) * intensityscale
+        mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane)) * intensity
         stitched = numpy.repeat(mag[..., None], 3, 2)
         return stitched
 
-    def chargeDensity(self, index, axis=2, intensityscale=1):
+    def chargeDensity(self, index, axis=2, intensity=1):
         plane = numpy.take(self.field.chargedensity, index, axis)
         R = plane * (plane > 0)
         G = numpy.zeros(plane.shape)
         B = numpy.absolute(plane * (plane < 0))
-        stitched = numpy.stack([R, G, B], 2) * intensityscale
+        stitched = numpy.stack([R, G, B], 2) * intensity
         return stitched
 
-    def chargeDensityTransparent(self, index, axis=2, intensityscale=1):
+    def chargeDensityTransparent(self, index, axis=2, intensity=1):
         plane = numpy.take(self.field.chargedensity, index, axis)
         R = plane > 0
         G = numpy.zeros(plane.shape)
         B = plane < 0
-        A = numpy.absolute(plane) * intensityscale
+        A = numpy.absolute(plane) * intensity
         stitched = numpy.stack([R, G, B, A], 2)
         return stitched
 
-    def currentDensityTransparent(self, index, axis=2, intensityscale=1):
+    def currentDensityTransparent(self, index, axis=2, intensity=1):
         plane = numpy.take(self.field.currentdensity, index, axis)
         mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane))
         RGB = numpy.divide(plane, mag[..., None], where=(mag[..., None] != 0)) / 2 + 0.5
-        A = mag * intensityscale
+        A = mag * intensity
         stitched = numpy.append(RGB, A[..., None], 2)
         return stitched
