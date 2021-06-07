@@ -44,37 +44,40 @@ class Field:
         self.faradaymodel = 0 # TODO: curl due to change in magnetic field
         self.amperemodel = (curl * (VAC_PERMEABILITY / 4 / math.pi))[:, None, ...] * tslicemask
 
-        self.cudagaussmodel = cupy.array(self.gaussmodel, cupy.float)
-        #self.cudafaradaymodel = cupy.array(self.faradaymodel, cupy.double)
-        self.cudaamperemodel = cupy.array(self.amperemodel, cupy.float)
-
-        self.cudaefield = cupy.zeros((self.timesize, *size, 3), cupy.float)
-        self.cudabfield = cupy.zeros((self.timesize, *size, 3), cupy.float)
+        # Working arrays
+        self.efield = numpy.zeros((self.timesize, *size, 3))
+        self.bfield = numpy.zeros((self.timesize, *size, 3))
+        self.chargedensity = numpy.zeros(size)
+        self.currentdensity = numpy.zeros((*size, 3))
         self.time = 0
-        self.cudachargedensity = cupy.zeros(size, cupy.float)
-        self.cudacurrentdensity = cupy.zeros((*size, 3), cupy.float)
+
+        # Cupy data structures
+        self.cudaefield = cupy.zeros((self.timesize, *size, 3), cupy.float32)
+        self.cudabfield = cupy.zeros((self.timesize, *size, 3), cupy.float32)
+
+        self.cudagaussmodel = cupy.array(self.gaussmodel, cupy.float32)
+        #self.cudafaradaymodel = cupy.array(self.faradaymodel, cupy.float32)
+        self.cudaamperemodel = cupy.array(self.amperemodel, cupy.float32)
 
         # Setup cuda
         self.BLOCK_SIZE = 512
 
         self.cudafieldsize = cupy.array((self.timesize, *self.size), cupy.int)
         self.cudamodelsize = cupy.array([dim * 2 - 1 for dim in self.size], cupy.int)
-        self.cudapointsperinp = cupy.int(self.cudafieldsize[1] * self.cudafieldsize[2] * self.cudafieldsize[3])
-        self.cudablocksperpoint = cupy.int(int(math.ceil(self.cudapointsperinp / self.BLOCK_SIZE)))
+        self.cudapointsperinp = self.cudafieldsize[1] * self.cudafieldsize[2] * self.cudafieldsize[3]
+        self.cudablocksperpoint = int(math.ceil(self.cudapointsperinp / self.BLOCK_SIZE))
         self.blockspergrid = int(self.cudafieldsize[0] * self.cudafieldsize[1] * self.cudafieldsize[2] * self.cudafieldsize[3] * 3 * self.cudablocksperpoint)
 
         with open("fieldkernels.h", "r") as file:
             code = file.read()
         self.gaussLawKernel = cupy.RawModule(code=code).get_function("gaussLawKernel")
 
-        self.updateHost()
-
     def update(self):
-        self.cudachargedensity = cupy.array(self.chargedensity, cupy.float)
-        self.cudacurrentdensity = cupy.array(self.currentdensity, cupy.float)
+        self.cudachargedensity = cupy.array(self.chargedensity, cupy.float32)
+        self.cudacurrentdensity = cupy.array(self.currentdensity, cupy.float32)
 
         # Advance time
-        self.cupyefield = cupy.roll(self.cudaefield, -1, 0)
+        self.cudaefield = cupy.roll(self.cudaefield, -1, 0)
         self.cudaefield[-1] = 0
 
         self.cudabfield = cupy.roll(self.cudabfield, -1, 0)
@@ -83,18 +86,13 @@ class Field:
         self.time += self.timestep
 
         # Compute new fields
-        self.gaussLawKernel((self.blockspergrid,), (self.BLOCK_SIZE,), (self.cudaefield, self.cudachargedensity, self.cudafieldsize, self.cudamodelsize, self.cudapointsperinp, self.cudablocksperpoint, self.cudagaussmodel))
+        print("compute")
+        self.gaussLawKernel((self.blockspergrid,), (self.BLOCK_SIZE,), (self.cudaefield, self.cudachargedensity, self.cudafieldsize, self.cudamodelsize, self.cudapointsperinp, self.cudablocksperpoint, self.cudagaussmodel), shared_mem=self.BLOCK_SIZE*4)
 
-        self.updateHost()
-
-    def updateHost(self):
         self.efield = cupy.asnumpy(self.cudaefield)
         self.bfield = cupy.asnumpy(self.cudabfield)
-        self.chargedensity = cupy.asnumpy(self.cudachargedensity)
-        self.currentdensity = cupy.asnumpy(self.cudacurrentdensity)
 
-
-
+        print(numpy.max(numpy.absolute(self.efield)))
 
 class Dipole:
     def __init__(self, field, frequency):
