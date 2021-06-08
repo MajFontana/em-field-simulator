@@ -1,14 +1,16 @@
 extern "C" __global__
-void gaussLawKernel(float* efield, float* chargedensity, unsigned int* fieldsize, unsigned int* modelsize, unsigned int pointsperinp, unsigned int blocksperpoint, float* gaussmodel) {
-    extern __shared__ float blockdata[];
-
-    int inpidx = (blockIdx.x % blocksperpoint) * blockDim.x + threadIdx.x;
+void gaussLawKernel(float* efield, float* chargedensity, unsigned int* fieldsize, unsigned int* modelsize, unsigned int inputsperpoint, unsigned int blocksperpoint, float* gaussmodel) {
+    // Allocate and initalize shared memory for parallel reduction
+    extern __shared__ float blockdata[512];
     blockdata[threadIdx.x] = 0.0;
     __syncthreads();
 
-    if (inpidx < pointsperinp) {
-        unsigned int fieldidx = blockIdx.x / blocksperpoint;
+    // Compute indices
+    unsigned int fieldidx = blockIdx.x / blocksperpoint;
+    int inpidx = (blockIdx.x % blocksperpoint) * blockDim.x + threadIdx.x;
 
+    if (inpidx < inputsperpoint) {
+        // Compute coordinates
         unsigned int d = fieldidx % 3;
         unsigned int fieldz = fieldidx / 3 % fieldsize[3];
         unsigned int fieldy = fieldidx / 3 / fieldsize[3] % fieldsize[2];
@@ -27,21 +29,24 @@ void gaussLawKernel(float* efield, float* chargedensity, unsigned int* fieldsize
         unsigned int modely = modeloffy + inpy;
         unsigned int modelx = modeloffx + inpx;
 
+        // Compute model index
         unsigned int modelidx = t * 3 * modelsize[2] * modelsize[1] * modelsize[0] + modelx * 3 * modelsize[2] * modelsize[1] + modely * 3 * modelsize[2] + modelz * 3 + d;
 
+        // Apply model to field
         blockdata[threadIdx.x] = gaussmodel[modelidx] * chargedensity[inpidx];
-        __syncthreads();
+    }
+    __syncthreads();
 
-        for (unsigned int stride = 1; stride < blockDim.x; stride *= 2) {
-            int index = 2 * stride * threadIdx.x;
-            if (index < blockDim.x) {
-                blockdata[index] += blockdata[index + stride];
-            }
-            __syncthreads();
+    // Parallel reduction - sum effects of all points in block
+    for (unsigned int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            blockdata[threadIdx.x] += blockdata[threadIdx.x + stride];
         }
-        
-        if (threadIdx.x == 0) {
-            atomicAdd(&efield[fieldidx], blockdata[0]);
-        }
+        __syncthreads();
+    }
+    
+    // Sum effects of entire block group
+    if (threadIdx.x == 0) {
+        atomicAdd(&efield[fieldidx], blockdata[0]);
     }
 }

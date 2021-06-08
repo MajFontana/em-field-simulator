@@ -19,29 +19,42 @@
     <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="fieldkernels.h">
+    <Content Include="src\fieldcompute\cudakernels.cu">
       <SubType>Code</SubType>
     </Content>
     <Content Include="README.md" />
     <Content Include="requirements.txt" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="field.py">
+    <Compile Include="src\emfield.py">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="fieldcuda.py">
+    <Compile Include="src\fieldcompute\cudacompute.py">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="fieldvis.py">
+    <Compile Include="src\fieldcompute\numpycompute.py">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="gui.py">
+    <Compile Include="src\fieldcompute\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="src\fieldvis.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="src\gui.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="main.py" />
+    <Compile Include="src\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
   </ItemGroup>
   <ItemGroup>
     <InterpreterReference Include="Global|PythonCore|3.9" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="src\" />
+    <Folder Include="src\fieldcompute\" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
 </Project>

@@ -12,8 +12,8 @@ LIGHT_SPEED = 299792458
 
 
 class Field:
-    def __init__(self, size, scale, timestep):
-        self.size = size
+    def __init__(self, size, scale, timestep, compute="numpy"):
+        self.size = tuple(size)
         self.scale = scale
         abssize = [(dim - 1) * scale for dim in size]
 
@@ -21,7 +21,7 @@ class Field:
         modelsize = [dim * 2 - 1 for dim in size]
         axes = [numpy.linspace(-abssize[i], abssize[i], modelsize[i]) if modelsize[i] > 1 else numpy.array([0]) for i in range(3)]
         coords = numpy.stack(numpy.meshgrid(*axes, indexing="ij"), axis=-1)
-        self.modelcenter = tuple([int(dim / 2) for dim in modelsize])
+        self.modelcenter = tuple([dim - 1 for dim in self.size])
 
         # Compute divergence and curl models
         distcubed = numpy.einsum("xyzp,xyzp->xyz", coords, coords) ** 1.5
@@ -40,14 +40,24 @@ class Field:
 
         # Compute models for Maxwell's equations
         self.gaussmodel = divergence * (1 / VAC_PERMITTIVITY / 4 / math.pi) * tslicemask
-        self.faradaymodel = 0 # TODO: curl due to change in magnetic field
+        #self.faradaymodel = 0
         self.amperemodel = (curl * (VAC_PERMEABILITY / 4 / math.pi))[:, None, ...] * tslicemask
 
+        # Working arrays
         self.efield = numpy.zeros((self.timesize, *size, 3))
         self.bfield = numpy.zeros((self.timesize, *size, 3))
-        self.time = 0
         self.chargedensity = numpy.zeros(size)
         self.currentdensity = numpy.zeros((*size, 3))
+        self.time = 0
+
+        if compute == "numpy":
+            from .fieldcompute import numpycompute
+            self.engine = numpycompute.FieldEngine(self)
+        elif compute == "cuda":
+            from .fieldcompute import cudacompute
+            self.engine = cudacompute.FieldEngine(self)
+        else:
+            self.engine = None
 
     def update(self):
         # Advance time
@@ -60,32 +70,8 @@ class Field:
         self.time += self.timestep
         
         # Compute new fields
-        for x in range(self.size[0]):
-            xstart = self.modelcenter[0] - x
-            xstop = xstart + self.size[0]
-            for y in range(self.size[1]):
-                ystart = self.modelcenter[1] - y
-                ystop = ystart + self.size[1]
-                for z in range(self.size[2]):
-                    zstart = self.modelcenter[2] - z
-                    zstop = zstart + self.size[2]
-                    
-                    # E field due to charge density
-                    charge = self.chargedensity[x, y, z]
-                    if charge != 0:
-                        croppedE = self.gaussmodel[:, xstart:xstop, ystart:ystop, zstart:zstop]
-                        scaledE = croppedE * charge
-                        self.efield += scaledE
-
-                    # B field due to current density
-                    current = self.currentdensity[x, y, z]
-                    if any(current):
-                        croppedB = self.amperemodel[:, :, xstart:xstop, ystart:ystop, zstart:zstop]
-                        scaledB = croppedB * current[:, None, None, None, None, None]
-                        self.bfield += numpy.sum(scaledB, 0)
-
-
-
+        if self.engine != None:
+            self.engine.compute()
 
 class Dipole:
     def __init__(self, field, frequency):
