@@ -1,4 +1,4 @@
 # em-field-simulator
 
 This is a work in progress.\
-Currently the simulation follows Gauss's and Ampere's laws. Still missing is the simulation of Faraday's law and Maxwell's addition to Ampere's law.
+Currently the CUDA implementation only follows Gauss's and Ampere's laws. NumPy implementation is complete, but unverified.

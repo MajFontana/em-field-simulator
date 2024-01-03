@@ -24,9 +24,9 @@ class Field:
         self.modelcenter = tuple([dim - 1 for dim in self.size])
 
         # Compute divergence and curl models
-        distcubed = numpy.einsum("xyzp,xyzp->xyz", coords, coords) ** 1.5
+        distsquared = numpy.einsum("xyzp,xyzp->xyz", coords, coords)
         with numpy.errstate(divide="ignore", invalid="ignore"):
-            divergence = coords / distcubed[..., None]
+            divergence = coords / distsquared[..., None]
         divergence[self.modelcenter] = 0
         curl = numpy.array([numpy.cross(basisvec, divergence) for basisvec in numpy.eye(3)])
 
@@ -34,18 +34,19 @@ class Field:
         dstep = self.timestep * LIGHT_SPEED
         
         # Compute spacetime propagation mask
-        radiicubed = numpy.arange(0, math.hypot(math.hypot(abssize[0], abssize[1]), abssize[2]) + dstep, dstep) ** 3
-        self.timesize = len(radiicubed) - 1
-        tslicemask = numpy.array([(distcubed > radiicubed[i]) & (distcubed < radiicubed[i + 1]) for i in range(self.timesize)])[..., None]
+        radiisquared = numpy.arange(0, math.hypot(math.hypot(abssize[0], abssize[1]), abssize[2]) + dstep, dstep) ** 2
+        self.timesize = len(radiisquared) - 1
+        tslicemask = numpy.array([(distsquared >= radiisquared[i]) & (distsquared < radiisquared[i + 1]) for i in range(self.timesize)])[..., None]
 
         # Compute models for Maxwell's equations
-        self.gaussmodel = divergence * (1 / VAC_PERMITTIVITY / 4 / math.pi) * tslicemask
-        #self.faradaymodel = 0
-        self.amperemodel = (curl * (VAC_PERMEABILITY / 4 / math.pi))[:, None, ...] * tslicemask
+        self.gaussmodel = divergence * (1 / VAC_PERMITTIVITY) * tslicemask
+        self.faradaymodel = -curl[:, None, ...] * tslicemask
+        self.amperemodel = (curl * VAC_PERMEABILITY)[:, None, ...] * tslicemask
+        self.maxwellmodel = (curl * VAC_PERMITTIVITY * VAC_PERMEABILITY)[:, None, ...] * tslicemask
 
         # Working arrays
-        self.efield = numpy.zeros((self.timesize, *size, 3))
-        self.bfield = numpy.zeros((self.timesize, *size, 3))
+        self.efield = numpy.zeros((self.timesize + 1, *size, 3))
+        self.bfield = numpy.zeros((self.timesize + 1, *size, 3))
         self.chargedensity = numpy.zeros(size)
         self.currentdensity = numpy.zeros((*size, 3))
         self.time = 0
@@ -74,7 +75,7 @@ class Field:
             self.engine.compute()
 
 class Dipole:
-    def __init__(self, field, frequency):
+    def __init__(self, field, frequency, amplitude):
         self.frequency = frequency
         self.field = field
         width = LIGHT_SPEED / frequency / 2 / field.scale
@@ -84,8 +85,9 @@ class Dipole:
         pxrang = [max(0, int(math.floor(rang[0]))), min(field.size[0] - 1, int(math.ceil(rang[1])))]
         self.values = numpy.linspace((pxrang[0] - ctr[0]) / width, (pxrang[1] - ctr[0]) / width, pxrang[1] - pxrang[0] + 1) * math.pi
         self.start = [pxrang[0], int(ctr[1]), int(ctr[2])]
+        self.amplitude = amplitude
         
     def update(self):
         for i in range(len(self.values)):
-            self.field.chargedensity[self.start[0] + i, self.start[1], self.start[2]] = math.sin(self.values[i]) * math.sin(2 * math.pi * self.field.time * self.frequency)
-            self.field.currentdensity[self.start[0] + i, self.start[1], self.start[2]] = [math.cos(self.values[i]) * math.cos(2 * math.pi * self.field.time * self.frequency), 0, 0]
+            self.field.chargedensity[self.start[0] + i, self.start[1], self.start[2]] = -math.sin(self.values[i] / 2) * math.sin(2 * math.pi * self.field.time * self.frequency) * self.amplitude
+            self.field.currentdensity[self.start[0] + i, self.start[1], self.start[2]] = [math.cos(self.values[i] / 2) * math.cos(2 * math.pi * self.field.time * self.frequency) * self.amplitude, 0, 0]

@@ -18,8 +18,8 @@ class FieldEngine:
         # Setup variables
         self.BLOCK_SIZE = 512
 
-        self.fieldsize = cupy.array((self.field.timesize, *self.field.size), cupy.int)
-        self.modelsize = cupy.array([dim * 2 - 1 for dim in self.field.size], cupy.int)
+        self.fieldsize = cupy.array((self.field.timesize, *self.field.size), cupy.int_)
+        self.modelsize = cupy.array([dim * 2 - 1 for dim in self.field.size], cupy.int_)
         self.inputsperpoint = int(self.fieldsize[1] * self.fieldsize[2] * self.fieldsize[3])
         self.blocksperpoint = int(math.ceil(self.inputsperpoint / self.BLOCK_SIZE))
 

@@ -8,23 +8,23 @@ class FieldVisualizer:
         self.field = field
     
     def eFieldRgb(self, index, axis=2, intensity=1):
-        plane = numpy.take(self.field.efield[0], index, axis)
+        plane = numpy.take(self.field.efield[1], index, axis)
         col = plane * intensity / 2 + 0.5
         return col
         
     def eFieldMagnitude(self, index, axis=2, intensity=1):
-        plane = numpy.take(self.field.efield[0], index, axis)
+        plane = numpy.take(self.field.efield[1], index, axis)
         mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane)) * intensity
         stitched = numpy.repeat(mag[..., None], 3, 2)
         return stitched
 
     def bFieldRgb(self, index, axis=2, intensity=1):
-        plane = numpy.take(self.field.bfield[0], index, axis)
+        plane = numpy.take(self.field.bfield[1], index, axis)
         col = plane * intensity / 2 + 0.5
         return col
 
     def bFieldMagnitude(self, index, axis=2, intensity=1):
-        plane = numpy.take(self.field.bfield[0], index, axis)
+        plane = numpy.take(self.field.bfield[1], index, axis)
         mag = numpy.sqrt(numpy.einsum("xyp,xyp->xy", plane, plane)) * intensity
         stitched = numpy.repeat(mag[..., None], 3, 2)
         return stitched

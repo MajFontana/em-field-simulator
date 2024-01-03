@@ -4,6 +4,15 @@ import numpy
 
 
 
+import os
+if os.name == "nt":
+    import ctypes
+    ctypes.windll.user32.SetProcessDPIAware()
+
+    
+
+
+
 class ArrayRenderer:
     def pygameSurface(array, size):
         raw = numpy.clip(array * 255, 0, 255).astype("uint8")
