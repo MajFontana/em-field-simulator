@@ -6,19 +6,19 @@ from src import gui
 
 
 w = gui.Window((1600, 800))
-f = emfield.Field((71, 71, 1), 0.005, 0.00000000001, "numpy")
+f = emfield.Field((21, 21, 21), 0.01, 4e-11, "numpy")
 fv = fieldvis.FieldVisualizer(f)
 d = emfield.Dipole(f, 2400000000, 1e-16)
 
-c1 = 0
-c2 = 35
+c1 = 10
+c2 = 10
 
 
 
 
 intensity = 1e16
 e_field_intensity = 6e2
-b_field_intensity = 3e19
+b_field_intensity = 4e19
 
 while w.update():
     w.fill([0, 0, 0])
